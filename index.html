@@ -163,7 +163,7 @@
         async function fetchSoundFiles() {
             try {
                 // Load static sounds.json from subfolder
-                const response = await fetch('minecraft-music-box/sounds.json');
+                const response = await fetch('/minecraft-music-box/sounds.json');
                 if (!response.ok) throw new Error(`HTTP错误！状态: ${response.status}`);
                 const soundFiles = await response.json();
                 allSounds = soundFiles;
