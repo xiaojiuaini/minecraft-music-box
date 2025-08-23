@@ -1,0 +1,313 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Minecraft音乐盒子</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .sound-item { 
+            cursor: pointer; 
+            padding: 8px 12px; 
+            line-height: 1.8; 
+            border-radius: 4px; 
+            margin-bottom: 4px; 
+        }
+        .sound-item:hover { background-color: #e5e7eb; }
+        .sound-item.selected { background-color: #bfdbfe; }
+        .sound-item.match { background-color: #fefcbf; }
+        .sound-item::before { content: '🎵 '; font-size: 1.2rem; }
+        .sidebar { 
+            width: 320px; 
+            overflow-y: auto; 
+            height: calc(100vh - 2rem); 
+            scrollbar-width: thin; 
+            scrollbar-color: #9ca3af #f3f4f6; 
+        }
+        .sidebar::-webkit-scrollbar { width: 8px; }
+        .sidebar::-webkit-scrollbar-track { background: #f3f4f6; }
+        .sidebar::-webkit-scrollbar-thumb { background: #9ca3af; border-radius: 4px; }
+        .search-input { 
+            padding: 10px; 
+            font-size: 1rem; 
+            border: 2px solid #d1d5db; 
+            border-radius: 6px; 
+        }
+        .search-input:focus { 
+            border-color: #3b82f6; 
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.3); 
+        }
+        .tooltip { position: relative; display: inline-block; }
+        .tooltip .tooltip-text { 
+            visibility: hidden; 
+            width: 300px; 
+            background-color: #1f2937; 
+            color: #fff; 
+            text-align: left; 
+            padding: 8px; 
+            border-radius: 6px; 
+            position: absolute; 
+            z-index: 10; 
+            bottom: 125%; 
+            left: 50%; 
+            margin-left: -150px; 
+            opacity: 0; 
+            transition: opacity 0.3s; 
+        }
+        .tooltip:hover .tooltip-text { visibility: visible; opacity: 1; }
+    </style>
+</head>
+<body class="bg-gray-100 font-sans">
+    <div class="flex">
+        <div id="sidebar" class="sidebar bg-white p-4 rounded-r-lg shadow-lg">
+            <h2 class="text-xl font-semibold mb-4 text-gray-800">音效列表</h2>
+            <div class="flex flex-col gap-3 mb-4">
+                <input id="searchInput" type="text" placeholder="搜索音效ID或路径..." class="search-input w-full">
+                <select id="categorySelect" class="p-2 border rounded-md focus:ring-blue-500 focus:border-blue-500">
+                    <option value="">所有分类</option>
+                </select>
+            </div>
+            <div id="soundList" class="text-gray-700"></div>
+        </div>
+        <div class="flex-1 p-4">
+            <h1 class="text-3xl font-bold text-center mb-4 text-blue-600">Minecraft音乐盒子</h1>
+            <div class="bg-white p-4 rounded-lg shadow-lg">
+                <h2 class="text-xl font-semibold mb-2 text-gray-800">播放和命令生成</h2>
+                <audio id="audioPlayer" controls class="w-full mb-4 rounded-md"></audio>
+                <div id="currentSound" class="text-gray-600 mb-2 font-medium">未选择音效</div>
+                <div class="grid grid-cols-1 gap-4 mb-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">
+                            音量 (0.0 - 100.0, 默认 1.0)
+                            <span class="tooltip">
+                                <span class="text-gray-500 text-xs ml-1">ⓘ</span>
+                                <span class="tooltip-text">指定声音可闻距离，至少为0.0。小于1.0时声音减轻，可闻范围变小；大于1.0时范围扩大（1.0时半径16米），声音随距离衰减，默认为1.0。</span>
+                            </span>
+                        </label>
+                        <input id="volume" type="number" step="0.1" min="0" max="100" value="1.0" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">
+                            音调 (0.5 - 2.0, 默认 1.0)
+                            <span class="tooltip">
+                                <span class="text-gray-500 text-xs ml-1">ⓘ</span>
+                                <span class="tooltip-text">指定声音音高，默认为1.0。0.5至2.0有效，低于0.5或高于2.0将限制在范围内。音调值影响播放速度（例如2.0为双倍速度）。</span>
+                            </span>
+                        </label>
+                        <input id="pitch" type="number" step="0.1" min="0.5" max="2.0" value="1.0" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">
+                            最小音量 (0.0 - 1.0, 默认 0.0)
+                            <span class="tooltip">
+                                <span class="text-gray-500 text-xs ml-1">ⓘ</span>
+                                <span class="tooltip-text">指定范围外音量。若目标在可闻范围外，声音在近距离（<4格）播放，最小音量决定其音量，0.0时无声，默认为0.0。</span>
+                            </span>
+                        </label>
+                        <input id="minVolume" type="number" step="0.1" min="0" max="1" value="0.0" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                </div>
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700">生成的命令</label>
+                    <div id="command" class="bg-gray-100 p-2 rounded-md text-gray-800 font-mono break-all">/playsound</div>
+                </div>
+                <button id="copyButton" class="bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600 transition">复制命令</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let allSounds = [];
+        let categories = new Set();
+        let currentSound = null;
+
+        async function fetchSoundFiles() {
+            try {
+                // Load static sounds.json
+                const response = await fetch('/sounds.json');
+                if (!response.ok) throw new Error(`HTTP错误！状态: ${response.status}`);
+                const soundFiles = await response.json();
+                allSounds = soundFiles;
+                renderSoundList(soundFiles);
+                populateCategories();
+            } catch (error) {
+                console.error("无法加载音效定义:", error);
+                document.getElementById("soundList").innerHTML = "<p class='text-red-500'>加载音效失败，请检查sounds.json</p>";
+            }
+        }
+
+        function renderSoundList(sounds) {
+            const soundList = document.getElementById("soundList");
+            soundList.innerHTML = "";
+            const ul = document.createElement("ul");
+            soundList.appendChild(ul);
+
+            sounds.forEach(sound => {
+                const li = document.createElement("li");
+                li.className = "sound-item";
+                li.innerHTML = `${sound.name} <span class="text-xs text-gray-500">(${sound.category})</span>`;
+                li.dataset.paths = JSON.stringify(sound.paths);
+                li.dataset.name = sound.name;
+                li.addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    document.querySelectorAll(".sound-item").forEach(n => n.classList.remove("selected"));
+                    li.classList.add("selected");
+                    currentSound = sound;
+                    playSound(sound);
+                });
+                ul.appendChild(li);
+            });
+
+            if (sounds.length === 0) {
+                soundList.innerHTML = "<p class='text-red-500'>未找到音效文件</p>";
+            }
+        }
+
+        function renderSoundListWithMatches(filteredSounds) {
+            const soundList = document.getElementById("soundList");
+            soundList.innerHTML = "";
+            const ul = document.createElement("ul");
+            soundList.appendChild(ul);
+
+            filteredSounds.forEach(sound => {
+                const li = document.createElement("li");
+                li.className = "sound-item match";
+                li.innerHTML = `${sound.name} <span class="text-xs text-gray-500">(${sound.category})</span>`;
+                li.dataset.paths = JSON.stringify(sound.paths);
+                li.dataset.name = sound.name;
+                li.addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    document.querySelectorAll(".sound-item").forEach(n => n.classList.remove("selected"));
+                    li.classList.add("selected");
+                    currentSound = sound;
+                    playSound(sound);
+                });
+                ul.appendChild(li);
+            });
+
+            if (filteredSounds.length === 0) {
+                soundList.innerHTML = "<p class='text-red-500'>无匹配音效，请检查输入</p>";
+            }
+        }
+
+        function populateCategories() {
+            const select = document.getElementById("categorySelect");
+            categories.clear();
+            allSounds.forEach(sound => categories.add(sound.category));
+            categories.forEach(category => {
+                const option = document.createElement("option");
+                option.value = category;
+                option.textContent = category;
+                select.appendChild(option);
+            });
+        }
+
+        function filterSounds() {
+            const searchTerm = document.getElementById("searchInput").value.toLowerCase();
+            const category = document.getElementById("categorySelect").value;
+            const filteredSounds = allSounds.filter(sound => {
+                const matchesSearch = sound.name.toLowerCase().includes(searchTerm) || 
+                                     sound.paths.some(path => path.toLowerCase().includes(searchTerm));
+                const matchesCategory = !category || sound.category === category;
+                return matchesSearch && matchesCategory;
+            });
+            renderSoundListWithMatches(filteredSounds);
+        }
+
+        function playSound(sound) {
+            const audioPlayer = document.getElementById("audioPlayer");
+            const currentSoundDisplay = document.getElementById("currentSound");
+            const volume = parseFloat(document.getElementById("volume").value) || 1.0;
+            const pitch = parseFloat(document.getElementById("pitch").value) || 1.0;
+            const paths = sound.paths;
+            const randomPath = paths[Math.floor(Math.random() * paths.length)];
+            audioPlayer.src = randomPath; // Relative path for static hosting
+            audioPlayer.volume = Math.max(0, Math.min(1.0, volume / 100)); // Map 0-100 to 0.0-1.0
+            audioPlayer.playbackRate = Math.max(0.5, Math.min(2.0, pitch)); // Restrict to 0.5-2.0
+            audioPlayer.play().catch(error => {
+                console.error("音频播放失败:", error);
+                alert("无法播放音频，请检查文件路径或格式");
+            });
+            currentSoundDisplay.textContent = `当前音效: ${sound.name}`;
+            updateCommand(sound.name);
+        }
+
+        function updateCommand(soundName) {
+            const volume = parseFloat(document.getElementById("volume").value) || 1.0;
+            const pitch = parseFloat(document.getElementById("pitch").value) || 1.0;
+            const minVolume = parseFloat(document.getElementById("minVolume").value) || 0.0;
+            const source = soundName.startsWith('music.') ? 'music' : 'master';
+            const command = `/playsound ${soundName} ${source} @a ~ ~ ~ ${volume.toFixed(1)} ${pitch.toFixed(1)} ${minVolume.toFixed(1)}`;
+            document.getElementById("command").textContent = command;
+        }
+
+        function validateInput(input, min, max, defaultValue) {
+            input.addEventListener("input", () => {
+                let value = parseFloat(input.value);
+                if (isNaN(value) || value < min) input.value = defaultValue;
+                if (value > max) input.value = max;
+                if (currentSound) {
+                    playSound(currentSound); // Reapply parameters on input change
+                }
+            });
+        }
+
+        document.getElementById("copyButton").addEventListener("click", () => {
+            const command = document.getElementById("command").textContent;
+            navigator.clipboard.writeText(command).then(() => {
+                alert("命令已复制到剪贴板！");
+            }).catch(() => {
+                alert("复制失败，请手动复制！");
+            });
+        });
+
+        document.addEventListener("DOMContentLoaded", () => {
+            fetchSoundFiles();
+            validateInput(document.getElementById("volume"), 0, 100, 1.0);
+            validateInput(document.getElementById("pitch"), 0.5, 2.0, 1.0);
+            validateInput(document.getElementById("minVolume"), 0, 1, 0.0);
+            document.getElementById("searchInput").addEventListener("input", filterSounds);
+            document.getElementById("categorySelect").addEventListener("change", filterSounds);
+        });
+    </script>
+</body>
+</html>
