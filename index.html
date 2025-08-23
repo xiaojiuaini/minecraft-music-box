@@ -162,8 +162,8 @@
 
         async function fetchSoundFiles() {
             try {
-                // Load static sounds.json
-                const response = await fetch('/sounds.json');
+                // Load static sounds.json with correct path
+                const response = await fetch('minecraft-music-box/sounds.json');
                 if (!response.ok) throw new Error(`HTTP错误！状态: ${response.status}`);
                 const soundFiles = await response.json();
                 allSounds = soundFiles;
@@ -260,7 +260,7 @@
             const pitch = parseFloat(document.getElementById("pitch").value) || 1.0;
             const paths = sound.paths;
             const randomPath = paths[Math.floor(Math.random() * paths.length)];
-            audioPlayer.src = randomPath; // Relative path for static hosting
+            audioPlayer.src = randomPath; // Use relative path for GitHub Pages
             audioPlayer.volume = Math.max(0, Math.min(1.0, volume / 100)); // Map 0-100 to 0.0-1.0
             audioPlayer.playbackRate = Math.max(0.5, Math.min(2.0, pitch)); // Restrict to 0.5-2.0
             audioPlayer.play().catch(error => {
