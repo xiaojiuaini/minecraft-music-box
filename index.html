@@ -1,43 +1,4 @@
-<script type="text/javascript">
-        var gk_isXlsx = false;
-        var gk_xlsxFileLookup = {};
-        var gk_fileData = {};
-        function filledCell(cell) {
-          return cell !== '' && cell != null;
-        }
-        function loadFileData(filename) {
-        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
-            try {
-                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
-                var firstSheetName = workbook.SheetNames[0];
-                var worksheet = workbook.Sheets[firstSheetName];
-
-                // Convert sheet to JSON to filter blank rows
-                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
-                // Filter out blank rows (rows where all cells are empty, null, or undefined)
-                var filteredData = jsonData.filter(row => row.some(filledCell));
-
-                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
-                var headerRowIndex = filteredData.findIndex((row, index) =>
-                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
-                );
-                // Fallback
-                if (headerRowIndex === -1 || headerRowIndex > 25) {
-                  headerRowIndex = 0;
-                }
-
-                // Convert filtered JSON back to CSV
-                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
-                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
-                return csv;
-            } catch (e) {
-                console.error(e);
-                return "";
-            }
-        }
-        return gk_fileData[filename] || "";
-        }
-        </script><!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
@@ -109,7 +70,7 @@
             <div id="soundList" class="text-gray-700"></div>
         </div>
         <div class="flex-1 p-4">
-            <h1 class="text-3xl font-bold text-center mb-4 text-blue-600">Minecraft音乐盒子</h1>
+            <h1 class="text-3xl font-bold text-center mb-4 text-blue-600">Minecraft音乐盒子（基岩版）</h1>
             <div class="bg-white p-4 rounded-lg shadow-lg">
                 <h2 class="text-xl font-semibold mb-2 text-gray-800">播放和命令生成</h2>
                 <audio id="audioPlayer" controls class="w-full mb-4 rounded-md"></audio>
@@ -120,7 +81,7 @@
                             音量 (0.0 - 100.0, 默认 1.0)
                             <span class="tooltip">
                                 <span class="text-gray-500 text-xs ml-1">ⓘ</span>
-                                <span class="tooltip-text">指定声音可闻距离，至少为0.0。小于1.0时声音减轻，可闻范围变小；大于1.0时范围扩大（1.0时半径16米），声音随距离衰减，默认为1.0。</span>
+                                <span class="tooltip-text">用于Minecraft基岩版命令，控制声音大小和可闻距离（0.0-100.0，1.0为16格半径）。不影响浏览器播放，仅用于生成命令，默认1.0。</span>
                             </span>
                         </label>
                         <input id="volume" type="number" step="0.1" min="0" max="100" value="1.0" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
@@ -130,7 +91,7 @@
                             音调 (0.5 - 2.0, 默认 1.0)
                             <span class="tooltip">
                                 <span class="text-gray-500 text-xs ml-1">ⓘ</span>
-                                <span class="tooltip-text">指定声音音高，默认为1.0。0.5至2.0有效，低于0.5或高于2.0将限制在范围内。音调值影响播放速度（例如2.0为双倍速度）。</span>
+                                <span class="tooltip-text">控制音效音高和播放速度（0.5-2.0，2.0为双倍速度）。唯一影响音效的参数，默认为1.0。</span>
                             </span>
                         </label>
                         <input id="pitch" type="number" step="0.1" min="0.5" max="2.0" value="1.0" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
@@ -140,10 +101,20 @@
                             最小音量 (0.0 - 1.0, 默认 0.0)
                             <span class="tooltip">
                                 <span class="text-gray-500 text-xs ml-1">ⓘ</span>
-                                <span class="tooltip-text">指定范围外音量。若目标在可闻范围外，声音在近距离（<4格）播放，最小音量决定其音量，0.0时无声，默认为0.0。</span>
+                                <span class="tooltip-text">用于Minecraft基岩版命令，控制超出可闻范围时的音量（0.0-1.0，0.0为无声）。不影响浏览器播放，仅用于生成命令，默认0.0。</span>
                             </span>
                         </label>
                         <input id="minVolume" type="number" step="0.1" min="0" max="1" value="0.0" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                    <div>
+                        <label class="flex items-center text-sm font-medium text-gray-700">
+                            <input id="autoReplay" type="checkbox" class="mr-2 h-4 w-4 text-blue-500 focus:ring-blue-500 border-gray-300 rounded">
+                            自动重播音效
+                            <span class="tooltip">
+                                <span class="text-gray-500 text-xs ml-1">ⓘ</span>
+                                <span class="tooltip-text">启用后，调整音量、音调或最小音量时将自动重播当前音效。默认关闭，仅更新命令。</span>
+                            </span>
+                        </label>
                     </div>
                 </div>
                 <div class="mb-4">
@@ -155,6 +126,38 @@
         </div>
     </div>
 
+    <script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+            return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+            if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+                try {
+                    var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                    var firstSheetName = workbook.SheetNames[0];
+                    var worksheet = workbook.Sheets[firstSheetName];
+                    var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                    var filteredData = jsonData.filter(row => row.some(filledCell));
+                    var headerRowIndex = filteredData.findIndex((row, index) =>
+                        row.filter(filledCell).length >= (filteredData[index + 1]?.filter(filledCell).length || 0)
+                    );
+                    if (headerRowIndex === -1 || headerRowIndex > 25) {
+                        headerRowIndex = 0;
+                    }
+                    var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex));
+                    csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                    return csv;
+                } catch (e) {
+                    console.error(e);
+                    return "";
+                }
+            }
+            return gk_fileData[filename] || "";
+        }
+    </script>
     <script>
         let allSounds = [];
         let categories = new Set();
@@ -162,8 +165,7 @@
 
         async function fetchSoundFiles() {
             try {
-                // Load static sounds.json from subfolder
-                const response = await fetch('/minecraft-music-box/sounds.json');
+                const response = await fetch('/sounds.json');
                 if (!response.ok) throw new Error(`HTTP错误！状态: ${response.status}`);
                 const soundFiles = await response.json();
                 allSounds = soundFiles;
@@ -256,17 +258,25 @@
         function playSound(sound) {
             const audioPlayer = document.getElementById("audioPlayer");
             const currentSoundDisplay = document.getElementById("currentSound");
-            const volume = parseFloat(document.getElementById("volume").value) || 1.0;
             const pitch = parseFloat(document.getElementById("pitch").value) || 1.0;
             const paths = sound.paths;
             const randomPath = paths[Math.floor(Math.random() * paths.length)];
-            audioPlayer.src = randomPath; // Use relative path for GitHub Pages
-            audioPlayer.volume = Math.max(0, Math.min(1.0, volume / 100)); // Map 0-100 to 0.0-1.0
-            audioPlayer.playbackRate = Math.max(0.5, Math.min(2.0, pitch)); // Restrict to 0.5-2.0
-            audioPlayer.play().catch(error => {
-                console.error("音频播放失败:", error);
-                alert("无法播放音频，请检查文件路径或格式");
-            });
+
+            audioPlayer.pause();
+            audioPlayer.currentTime = 0;
+            audioPlayer.src = randomPath;
+            audioPlayer.volume = 1.0;
+            audioPlayer.playbackRate = Math.max(0.5, Math.min(2.0, pitch));
+
+            audioPlayer.oncanplay = () => {
+                audioPlayer.play().catch(error => {
+                    if (error.name !== 'AbortError') {
+                        console.error("音频播放失败:", error);
+                        alert("无法播放音频，请检查文件路径或格式");
+                    }
+                });
+            };
+
             currentSoundDisplay.textContent = `当前音效: ${sound.name}`;
             updateCommand(sound.name);
         }
@@ -275,8 +285,9 @@
             const volume = parseFloat(document.getElementById("volume").value) || 1.0;
             const pitch = parseFloat(document.getElementById("pitch").value) || 1.0;
             const minVolume = parseFloat(document.getElementById("minVolume").value) || 0.0;
-            const source = soundName.startsWith('music.') ? 'music' : 'master';
-            const command = `/playsound ${soundName} ${source} @a ~ ~ ~ ${volume.toFixed(1)} ${pitch.toFixed(1)} ${minVolume.toFixed(1)}`;
+            
+            // 基岩版命令：移除音效通道参数
+            const command = `/playsound ${soundName} @s ~ ~ ~ ${volume.toFixed(1)} ${pitch.toFixed(1)} ${minVolume.toFixed(1)}`;
             document.getElementById("command").textContent = command;
         }
 
@@ -286,7 +297,10 @@
                 if (isNaN(value) || value < min) input.value = defaultValue;
                 if (value > max) input.value = max;
                 if (currentSound) {
-                    playSound(currentSound); // Reapply parameters on input change
+                    updateCommand(currentSound.name);
+                    if (document.getElementById("autoReplay").checked) {
+                        playSound(currentSound);
+                    }
                 }
             });
         }
